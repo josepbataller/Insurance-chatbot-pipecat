@@ -12,7 +12,7 @@ from pipecat.transports.base_transport import TransportParams
 
 # Import your existing bot setup
 from chatbot import run_bot
-from types import SimpleNamespace
+from pipecat.runner.types import WebSocketRunnerArguments
 
 app = FastAPI()
 
@@ -48,12 +48,7 @@ async def websocket_stream(websocket: WebSocket):
     logger.info("🔊 Twilio WebSocket connected")
 
     # Create RunnerArguments for Pipecat bot
-    runner_args = SimpleNamespace(
-        transport="webrtc",
-        handle_sigint=False,
-        handle_sigterm=False,
-        pipeline_idle_timeout_secs=0
-    )
+    runner_args = WebSocketRunnerArguments(websocket=websocket)
 
     transport_params = {
         "webrtc": lambda: TransportParams(
