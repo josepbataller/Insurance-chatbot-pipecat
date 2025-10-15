@@ -31,7 +31,7 @@ async def voice_webhook(request: Request):
     connect.stream(url=TWILIO_STREAM_URL)
     response.append(connect)
 
-    return Response(content=str(response), media_type="application/xml")
+    return Response(content=response.to_xml(), media_type="application/xml")
 
 
 @app.websocket("/stream")
