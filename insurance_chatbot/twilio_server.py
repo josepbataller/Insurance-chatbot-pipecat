@@ -3,30 +3,32 @@ import asyncio
 from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import Response
 from twilio.twiml.voice_response import VoiceResponse, Connect
-from dotenv import load_dotenv
 from loguru import logger
 
 # Import your existing bot setup
 from chatbot import run_bot
 from pipecat.runner.types import RunnerArguments
 
-load_dotenv(override=True)
-
 app = FastAPI()
 
+# Get the Twilio WebSocket URL from environment variable
+TWILIO_STREAM_URL = os.environ.get("TWILIO_STREAM_URL")
+if not TWILIO_STREAM_URL:
+    logger.error("TWILIO_STREAM_URL is not set! Please define it in environment variables.")
 
 @app.post("/voice")
 async def voice_webhook(request: Request):
     """
-    This endpoint is called by Twilio when a call starts.
-    It responds with TwiML that tells Twilio to open a WebSocket
-    to /stream (below), which will carry audio in real-time.
+    Endpoint called by Twilio when a call starts.
+    Responds with TwiML instructing Twilio to open a WebSocket to /stream.
     """
     logger.info("📞 Incoming call received from Twilio")
 
     response = VoiceResponse()
     connect = Connect()
-    connect.stream(url="wss://your-ngrok-url.ngrok.io/stream")
+
+    # Use environment variable for stream URL
+    connect.stream(url=TWILIO_STREAM_URL)
     response.append(connect)
 
     return Response(content=str(response), media_type="application/xml")
@@ -35,23 +37,22 @@ async def voice_webhook(request: Request):
 @app.websocket("/stream")
 async def websocket_stream(websocket: WebSocket):
     """
-    This is where Twilio streams audio to and from the bot.
-    The WebSocket connection handles bidirectional audio.
+    Handles bidirectional WebSocket audio streaming between Twilio and Pipecat bot.
     """
     await websocket.accept()
     logger.info("🔊 Twilio WebSocket connected")
 
-    # Create a dummy RunnerArguments for Pipecat
+    # Create RunnerArguments for Pipecat bot
     runner_args = RunnerArguments(transport="webrtc", handle_sigint=False)
 
-    # Run your existing Pipecat bot (non-blocking)
+    # Run Pipecat bot asynchronously
     bot_task = asyncio.create_task(run_bot(transport=None, runner_args=runner_args))
 
     try:
         while True:
             data = await websocket.receive_text()
             logger.debug(f"Received data from Twilio: {data}")
-            # You can forward this data to your Pipecat bot here if needed
+            # Forward this data to your Pipecat bot if needed
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
     finally:
