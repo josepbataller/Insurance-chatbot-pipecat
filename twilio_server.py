@@ -4,6 +4,11 @@ from fastapi import FastAPI, Request, WebSocket
 from fastapi.responses import Response
 from twilio.twiml.voice_response import VoiceResponse, Connect
 from loguru import logger
+from pipecat.audio.turn.smart_turn.local_smart_turn_v3 import LocalSmartTurnAnalyzerV3
+from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.vad_analyzer import VADParams
+from pipecat.runner.utils import create_transport
+from pipecat.transports.base_transport import TransportParams
 
 # Import your existing bot setup
 from chatbot import run_bot
@@ -43,10 +48,22 @@ async def websocket_stream(websocket: WebSocket):
     logger.info("🔊 Twilio WebSocket connected")
 
     # Create RunnerArguments for Pipecat bot
-    runner_args = RunnerArguments(transport="webrtc", handle_sigint=False)
+    runner_args = RunnerArguments()
+    runner_args.transport = "webrtc"  # set AFTER init
+
+    transport_params = {
+        "webrtc": lambda: TransportParams(
+            audio_in_enabled=True,
+            audio_out_enabled=True,
+            vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=0.2)),
+            turn_analyzer=LocalSmartTurnAnalyzerV3(),
+        ),
+    }
+
+    transport = await create_transport(runner_args, transport_params)
 
     # Run Pipecat bot asynchronously
-    bot_task = asyncio.create_task(run_bot(transport=None, runner_args=runner_args))
+    bot_task = asyncio.create_task(run_bot(transport=transport, runner_args=runner_args))
 
     try:
         while True:
