@@ -63,12 +63,20 @@ async def websocket_stream(websocket: WebSocket):
 
     try:
         while True:
-            data = await websocket.receive_text()
-            logger.debug(f"Received data from Twilio: {data}")
-            # Forward this data to your Pipecat bot if needed
+            await asyncio.sleep(5)
+            if websocket.application_state != "CONNECTED":
+                break
+            try:
+                await websocket.send_text("ping")
+            except Exception:
+                break
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
     finally:
-        await websocket.close()
-        logger.info("🔌 WebSocket closed")
+        try:
+            if websocket.application_state == "CONNECTED":
+                await websocket.close()
+        except Exception as e:
+            logger.warning(f"WebSocket already closed: {e}")
+        logger.info("🔌 WebSocket cleanup complete")
         bot_task.cancel()

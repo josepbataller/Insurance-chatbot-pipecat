@@ -167,7 +167,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
         logger.info("Client connected")
-        messages.append({"role": "system", "content": "Say a short hello."})
+        messages.append({"role": "assistant", "content": "Hello! How can I help you today?"})
         await scripted_conversation(task, messages, context, context_aggregator, claim_number)
 
     @transport.event_handler("on_client_disconnected")
