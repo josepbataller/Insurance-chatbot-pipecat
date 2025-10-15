@@ -18,6 +18,8 @@ app = FastAPI()
 TWILIO_STREAM_URL = os.environ.get("TWILIO_STREAM_URL")
 if not TWILIO_STREAM_URL:
     logger.error("TWILIO_STREAM_URL is not set! Please define it in environment variables.")
+else:
+    logger.info(f"✅ TWILIO_STREAM_URL: {TWILIO_STREAM_URL}")
 
 @app.post("/voice")
 async def voice_webhook(request: Request):
@@ -34,7 +36,9 @@ async def voice_webhook(request: Request):
     connect.stream(url=TWILIO_STREAM_URL)
     response.append(connect)
 
-    return Response(content=response.to_xml(), media_type="application/xml")
+    xml_response = response.to_xml()
+    logger.debug(f"Responding with TwiML:\n{xml_response}")
+    return Response(content=xml_response, media_type="application/xml")
 
 
 @app.websocket("/stream")
@@ -52,31 +56,32 @@ async def websocket_stream(websocket: WebSocket):
         "twilio": lambda: FastAPIWebsocketParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
+            add_wav_header=True,  # 👈 important for Twilio
             vad_analyzer=SileroVADAnalyzer(),
         )
     }
 
-    transport = await create_transport(runner_args, transport_params)
+    try:
+        transport = await create_transport(runner_args, transport_params)
+    except Exception as e:
+        logger.exception(f"❌ Failed to create transport: {e}")
+        await websocket.close()
+        return
 
     # Run Pipecat bot asynchronously
     bot_task = asyncio.create_task(run_bot(transport=transport, runner_args=runner_args))
 
     try:
-        while True:
-            await asyncio.sleep(5)
-            if websocket.application_state != "CONNECTED":
-                break
-            try:
-                await websocket.send_text("ping")
-            except Exception:
-                break
+        await bot_task  # Wait for bot completion
+    except asyncio.CancelledError:
+        logger.warning("🛑 Bot task cancelled.")
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        logger.exception(f"💥 Error while running bot: {e}")
     finally:
-        try:
-            if websocket.application_state == "CONNECTED":
+        # Ensure the WebSocket is closed properly
+        if websocket.client_state.name != "DISCONNECTED":
+            try:
                 await websocket.close()
-        except Exception as e:
-            logger.warning(f"WebSocket already closed: {e}")
-        logger.info("🔌 WebSocket cleanup complete")
-        bot_task.cancel()
+            except Exception as e:
+                logger.warning(f"⚠️ Error closing websocket: {e}")
+        logger.info("🔌 WebSocket connection closed and cleaned up.")
