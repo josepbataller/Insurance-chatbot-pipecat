@@ -10,8 +10,7 @@ from pipecat.runner.utils import create_transport
 # Import your existing bot setup
 from chatbot import run_bot
 from pipecat.runner.types import WebSocketRunnerArguments
-
-from pipecat.src.pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
+from pipecat.transports.websocket.fastapi import FastAPIWebsocketParams
 
 app = FastAPI()
 
