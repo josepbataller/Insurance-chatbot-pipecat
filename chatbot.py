@@ -18,6 +18,7 @@ import random
 import string
 import asyncio
 
+import uuid
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -49,18 +50,43 @@ from pipecat.services.cartesia.tts import CartesiaTTSService
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.openai.llm import OpenAILLMService
 from pipecat.transports.base_transport import BaseTransport, TransportParams
+from supabase import create_client, Client
+from pipecat.processors.transcript_processor import TranscriptProcessor
 
 logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
 
+# --- Supabase setup ---
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+SESSION_ID = str(uuid.uuid4())  # Unique session ID per conversation
+
+# Create a single transcript processor instance
+transcript = TranscriptProcessor()
+
+@transcript.event_handler("on_transcript_update")
+async def handle_transcript_update(processor, frame):
+    # Each message contains role (user/assistant), content, and timestamp
+    logger.debug('We are here!')
+    for message in frame.messages:
+        print(f"[{message.timestamp}] {message.role}: {message.content}")
+        # Save to Supabase
+        supabase.table('conversation_logs').insert({
+            'role': message.role,
+            'message': message.content,
+            'timestamp': message.timestamp,
+            'session_id': SESSION_ID
+        }).execute()
 
 def generate_claim_number():
     """Generate a 10-character alphanumeric claim number containing '000'."""
     while True:
         s = ''.join(random.choices(string.ascii_uppercase + string.digits, k=10))
         insert_pos = random.randint(0, 7)
-        s = s[:insert_pos] + "000" + s[insert_pos+3:]
+        s = s[:insert_pos] + "000" + s[insert_pos + 3:]
         if "000" in s:
             return s
 
@@ -90,7 +116,8 @@ async def scripted_conversation(task, messages, context, context_aggregator, cla
             await task.queue_frames([LLMRunFrame()])
             step_index += 1
         if step_index >= total_steps:
-            messages.append({"role": "assistant", "content": "Thanks! That covers everything I needed."})
+            final_msg = "Thanks! That covers everything I needed."
+            messages.append({"role": "assistant", "content": final_msg})
             await task.queue_frames([LLMRunFrame()])
 
     # Start conversation after connection
@@ -99,8 +126,8 @@ async def scripted_conversation(task, messages, context, context_aggregator, cla
     # Listen for user turns via the aggregator
     @context_aggregator.user().event_handler("on_message")
     async def on_user_message(processor, message):
-        """Triggered each time you (the human) respond."""
-        logger.info(f"User said: {message}")
+        """Triggered each time the user responds."""
+        logger.info(f"User said: {message.content}")
         await asyncio.sleep(1)
         await next_bot_line()
 
@@ -150,10 +177,12 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             transport.input(),  # Transport user input
             rtvi,               # RTVI processor
             stt,                # Speech-to-text
+            transcript.user(),              # Captures user transcripts
             context_aggregator.user(),  # User messages
             llm,                # Language model
             tts,                # Text-to-speech
             transport.output(), # Send audio back
+            transcript.assistant(),         # Captures assistant transcripts
             context_aggregator.assistant(),  # Store bot messages
         ]
     )
@@ -167,7 +196,8 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
         logger.info("Client connected")
-        messages.append({"role": "assistant", "content": "Hello! How can I help you today?"})
+        start_msg = "Hello! How can I help you today?"
+        messages.append({"role": "assistant", "content": start_msg})
         await scripted_conversation(task, messages, context, context_aggregator, claim_number)
 
     @transport.event_handler("on_client_disconnected")
