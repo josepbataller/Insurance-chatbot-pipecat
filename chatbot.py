@@ -62,23 +62,27 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-SESSION_ID = str(uuid.uuid4())  # Unique session ID per conversation
-
 # Create a single transcript processor instance
 transcript = TranscriptProcessor()
 
+current_session_id = None
+saved_messages = set()
+
 @transcript.event_handler("on_transcript_update")
 async def handle_transcript_update(processor, frame):
-    # Each message contains role (user/assistant), content, and timestamp
-    for message in frame.messages:
-        print(f"[{message.timestamp}] {message.role}: {message.content}")
-        # Save to Supabase
-        supabase.table('conversation_logs').insert({
-            'role': message.role,
-            'message': message.content,
-            'timestamp': message.timestamp,
-            'session_id': SESSION_ID
-        }).execute()
+    if current_session_id:
+        for message in frame.messages:
+            msg_id = (message.role, message.content, str(message.timestamp))
+            if msg_id not in saved_messages:
+                supabase.table('conversation_logs').insert({
+                    'role': message.role,
+                    'message': message.content,
+                    'timestamp': message.timestamp,
+                    'session_id': current_session_id
+                }).execute()
+                saved_messages.add(msg_id)
+                logger.debug(f'Store to supabase: {msg_id}')
+
 
 def generate_claim_number():
     """Generate a 10-character alphanumeric claim number containing '000'."""
@@ -140,6 +144,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
       - OpenAI for conversational reasoning (LLM)
       - Cartesia for Text-to-Speech (TTS)
     """
+    global current_session_id, saved_messages  # Use global variables
     logger.info(f"Starting bot")
 
     stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
@@ -194,7 +199,11 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
-        logger.info("Client connected")
+        global current_session_id, saved_messages
+        current_session_id = str(uuid.uuid4())
+        saved_messages.clear()  # Clear for new session
+        logger.info(f"Client connected - Session ID: {current_session_id}")
+
         start_msg = "Hello! How can I help you today?"
         messages.append({"role": "assistant", "content": start_msg})
         await scripted_conversation(task, messages, context, context_aggregator, claim_number)
