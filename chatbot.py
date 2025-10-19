@@ -70,7 +70,6 @@ transcript = TranscriptProcessor()
 @transcript.event_handler("on_transcript_update")
 async def handle_transcript_update(processor, frame):
     # Each message contains role (user/assistant), content, and timestamp
-    logger.debug('We are here!')
     for message in frame.messages:
         print(f"[{message.timestamp}] {message.role}: {message.content}")
         # Save to Supabase
@@ -147,7 +146,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
 
     tts = CartesiaTTSService(
         api_key=os.getenv("CARTESIA_API_KEY"),
-        voice_id="71a7ad14-091c-4e8e-a314-022ece01c121",  # British Reading Lady
+        voice_id="c66a43fa-7fe2-455b-9ccb-964b54f0e13b",
     )
 
     llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"))
