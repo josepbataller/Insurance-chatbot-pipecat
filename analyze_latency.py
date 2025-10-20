@@ -67,6 +67,8 @@ metrics_df = metrics_df.sort_values("created_at").reset_index(drop=True)
 
 # Keep only relevant columns
 metrics_df = metrics_df[["created_at", "processor", "value"]]
+# Convert module latencies from seconds to milliseconds
+metrics_df["value"] = metrics_df["value"] * 1000
 
 # -------------------------------
 # 5. Summarize latency per processor/module
@@ -75,6 +77,7 @@ def summarize_latency(df, total_latency_df):
     summary = df.groupby("processor")["value"].agg(
         mean=lambda x: round(x.mean(), 6),
         median=lambda x: round(x.median(), 6),   # P50
+        p50=lambda x: round(x.quantile(0.5), 6),
         p90=lambda x: round(x.quantile(0.9), 6),
         max=lambda x: round(x.max(), 6),
         min=lambda x: round(x.min(), 6),
@@ -86,6 +89,7 @@ def summarize_latency(df, total_latency_df):
         total_stats = {
             "mean": round(total_latency_df["latency_ms"].mean(), 6),
             "median": round(total_latency_df["latency_ms"].median(), 6),
+            "p50": round(total_latency_df["latency_ms"].quantile(0.5), 6),
             "p90": round(total_latency_df["latency_ms"].quantile(0.9), 6),
             "max": round(total_latency_df["latency_ms"].max(), 6),
             "min": round(total_latency_df["latency_ms"].min(), 6),
@@ -96,8 +100,19 @@ def summarize_latency(df, total_latency_df):
     return summary
 
 summary = summarize_latency(metrics_df, total_latency_df)
-print("\n=== Module Latency Summary (ms) ===")
-print(summary)
+
+# 1️⃣ Print a pretty Markdown-style table (good for reports)
+print("\n=== Module Latency Summary (ms) ===\n")
+print(summary.to_markdown(floatfmt=".6f"))
+
+# 2️⃣ Also print a simple text version (for plain text reports)
+print("\n--- Plain Text Version ---\n")
+print(summary.to_string(float_format="{:.6f}".format))
+
+# 3️⃣ Save to CSV
+summary_csv_path = os.path.join(PLOTS_DIR, f"session_{SESSION_ID}_latency_summary.csv")
+summary.to_csv(summary_csv_path, sep=';', float_format="%.6f", decimal=',')
+print(f"\n✅ Summary table saved to {summary_csv_path}")
 
 # -------------------------------
 # 6. Plot latency per processor/module
