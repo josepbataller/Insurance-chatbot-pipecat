@@ -17,6 +17,10 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 SESSION_ID = input("Enter the session_id you want to analyze: ").strip()
 
+# Directory to save plots
+PLOTS_DIR = "plots"
+os.makedirs(PLOTS_DIR, exist_ok=True)
+
 # -------------------------------
 # 2. Connect to Supabase
 # -------------------------------
@@ -67,7 +71,7 @@ metrics_df = metrics_df[["created_at", "processor", "value"]]
 # -------------------------------
 # 5. Summarize latency per processor/module
 # -------------------------------
-def summarize_latency(df):
+def summarize_latency(df, total_latency_df):
     summary = df.groupby("processor")["value"].agg(
         mean=lambda x: round(x.mean(), 6),
         median=lambda x: round(x.median(), 6),   # P50
@@ -76,9 +80,22 @@ def summarize_latency(df):
         min=lambda x: round(x.min(), 6),
         std=lambda x: round(x.std(), 6)
     )
+
+    # Add total conversation latency as a separate row
+    if not total_latency_df.empty:
+        total_stats = {
+            "mean": round(total_latency_df["latency_ms"].mean(), 6),
+            "median": round(total_latency_df["latency_ms"].median(), 6),
+            "p90": round(total_latency_df["latency_ms"].quantile(0.9), 6),
+            "max": round(total_latency_df["latency_ms"].max(), 6),
+            "min": round(total_latency_df["latency_ms"].min(), 6),
+            "std": round(total_latency_df["latency_ms"].std(), 6)
+        }
+        summary.loc["Total conversation"] = total_stats
+
     return summary
 
-summary = summarize_latency(metrics_df)
+summary = summarize_latency(metrics_df, total_latency_df)
 print("\n=== Module Latency Summary (ms) ===")
 print(summary)
 
@@ -100,10 +117,14 @@ for module in modules:
     plt.ylabel("Latency (ms)")
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+
+    filename = os.path.join(PLOTS_DIR, f"{SESSION_ID}_{module}_latency.png")
+    plt.savefig(filename)
+    plt.close()
+    print(f"Saved plot: {filename}")
 
 # -------------------------------
-# 7. Plot total conversation latency
+# 7. Save total conversation latency plot
 # -------------------------------
 if not total_latency_df.empty:
     plt.figure(figsize=(8, 4))
@@ -113,6 +134,10 @@ if not total_latency_df.empty:
     plt.ylabel("Latency (ms)")
     plt.grid(True)
     plt.tight_layout()
-    plt.show()
+
+    filename = os.path.join(PLOTS_DIR, f"{SESSION_ID}_total_latency.png")
+    plt.savefig(filename)
+    plt.close()
+    print(f"Saved plot: {filename}")
 else:
     print("\n⚠️ No total conversation latency data available.")
