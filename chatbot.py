@@ -53,6 +53,10 @@ from pipecat.transports.base_transport import BaseTransport, TransportParams
 from supabase import create_client, Client
 from pipecat.processors.transcript_processor import TranscriptProcessor
 
+from pipecat.frames.frames import MetricsFrame
+from pipecat.metrics.metrics import ProcessingMetricsData
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+
 logger.info("✅ All components loaded successfully!")
 
 load_dotenv(override=True)
@@ -61,6 +65,25 @@ load_dotenv(override=True)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+class MetricsLogger(FrameProcessor):
+    async def process_frame(self, frame: MetricsFrame, direction: FrameDirection):
+        await super().process_frame(frame, direction)
+
+        if isinstance(frame, MetricsFrame):
+            for d in frame.data:
+                if isinstance(d, ProcessingMetricsData):
+                    # d.processor contains the service name
+                    # d.value contains the latency in seconds
+                    metric_record = {
+                        "session_id": current_session_id,
+                        "metric_type": "processing",
+                        "processor": d.processor,  # e.g., "DeepgramSTTService#0"
+                        "value": d.value
+                    }
+                    supabase.table("metrics_logs").insert(metric_record).execute()
+
+        await self.push_frame(frame, direction)
 
 # Create a single transcript processor instance
 transcript = TranscriptProcessor()
@@ -185,6 +208,7 @@ async def run_bot(transport: BaseTransport, runner_args: RunnerArguments):
             context_aggregator.user(),  # User messages
             llm,                # Language model
             tts,                # Text-to-speech
+            MetricsLogger(),  # Store the metrics
             transport.output(), # Send audio back
             transcript.assistant(),         # Captures assistant transcripts
             context_aggregator.assistant(),  # Store bot messages
